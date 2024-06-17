@@ -6,6 +6,7 @@ import random
 from typing import Set
 
 import discord
+import pandas as pd
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
@@ -22,8 +23,8 @@ embed_msg_color_standard = 0x44a0ff
 embed_msg_color_error = 0xff0000
 embed_msg_color_success = 0x00ff00
 
-# How often can the user claim in minutes
-timely_claim_cooldown = 0.5
+# How often can the user claim in seconds
+timely_claim_cooldown = 30
 
 # Timely card claim weights
 timely_claim_common_weight = 300
@@ -61,10 +62,11 @@ class Card:
 
 
 class User:
-    def __init__(self, discord_id: int, registration_date: datetime, level: int, exp: int, balance: int,
+    def __init__(self, discord_id: int, registration_date: datetime, claim_date: datetime, level: int, exp: int, balance: int,
                  cards: Set[Card]):
         self.discord_id = discord_id
         self.registration_date = registration_date
+        self.claim_date = claim_date
         self.level = level
         self.exp = exp
         self.balance = balance
@@ -110,6 +112,7 @@ if card_collection.count_documents({}) == 0:
     # Loads up CSVs, converts them into dicts, 1st row is header.
     cardid = 0
     with open("cardslist_bootstrap_commons.csv", "r") as file:
+        next(file)
         for line in file:
             card = line.split(",")
             card = {
@@ -122,6 +125,7 @@ if card_collection.count_documents({}) == 0:
             card_collection.insert_one(card)
             cardid += 1
     with open("cardslist_bootstrap_rares.csv", "r") as file:
+        next(file)
         for line in file:
             card = line.split(",")
             card = {
@@ -134,6 +138,7 @@ if card_collection.count_documents({}) == 0:
             card_collection.insert_one(card)
             cardid += 1
     with open("cardslist_bootstrap_epics.csv", "r") as file:
+        next(file)
         for line in file:
             card = line.split(",")
             card = {
@@ -146,6 +151,7 @@ if card_collection.count_documents({}) == 0:
             card_collection.insert_one(card)
             cardid += 1
     with open("cardslist_bootstrap_legendaries.csv", "r") as file:
+        next(file)
         for line in file:
             card = line.split(",")
             card = {
@@ -214,7 +220,7 @@ def getperms(user_id: int):
 def get_user(user_id: int):
     user = user_collection.find_one({"discord_id": user_id})
     if user is not None:
-        return User(user["discord_id"], user["registration_date"], user["level"], user["exp"], user["balance"],
+        return User(user["discord_id"], user["registration_date"], user["claim_date"], user["level"], user["exp"], user["balance"],
                     user["cards"])
     else:
         return None
@@ -262,6 +268,7 @@ async def on_message(message):
             user = {
                 "discord_id": message.author.id,
                 "registration_date": datetime.datetime.now(),
+                "claim_date": datetime.datetime.now(),
                 "level": 1,
                 "exp": 0,
                 "balance": 0,
@@ -274,35 +281,22 @@ async def on_message(message):
             await message.channel.send(embed=embedmsg)
         if command == "inventory":
             user = get_user(message.author.id)
-            userperms = getperms(message.author.id)
-            if not checkperms(message.author.id, "moderator") or len(args) == 0:
-                if user is None:
-                    embedmsg = discord.Embed(title="Error", description="You are not registered.\nUse !register to register",
-                                             color=embed_msg_color_error)
-                    await message.channel.send(embed=embedmsg)
-                    return
-                embedmsg = discord.Embed(title="Inventory", description="Your inventory",
-                                         color=embed_msg_color_standard)
-                for card in user.cards:
-                    embedmsg.add_field(name=f"Card ID: {card['card_id']}",
-                                       value=f"Name: {card['name']}\nRarity: {card['rarity']}\nDescription: {card['description']}",
-                                       inline=False)
-                await message.channel.send(embed=embedmsg)
-                return
-            # reformat the 1st arg to be an integer
-            targetid = int(args[0].replace("<@", "").replace(">", ""))
-            targetuser = get_user(targetid)
-            if targetuser is None:
-                embedmsg = discord.Embed(title="Error", description="User is not registered",
+            if user is None:
+                embedmsg = discord.Embed(title="Error",
+                                         description="You are not registered.\nUse !register to register",
                                          color=embed_msg_color_error)
                 await message.channel.send(embed=embedmsg)
                 return
-            embedmsg = discord.Embed(title="Inventory", description="User inventory",
-                                     color=embed_msg_color_standard)
-            for card in targetuser.cards:
-                embedmsg.add_field(name=f"Card ID: {card['card_id']}",
+            embedmsg = discord.Embed(title="Inventory", description="Your inventory",
+                                        color=embed_msg_color_standard)
+            for (i, card) in enumerate(user.cards):
+                if len(embedmsg.fields) >= 20:
+                    await message.channel.send(embed=embedmsg)
+                    embedmsg = discord.Embed(title="Inventory", description="Your inventory",
+                                            color=embed_msg_color_standard)
+                embedmsg.add_field(name=f"{i+1}.",
                                    value=f"Name: {card['name']}\nRarity: {card['rarity']}\nDescription: {card['description']}",
-                                   inline=False)
+                                   inline=True)
             await message.channel.send(embed=embedmsg)
             return
         if command == "claim":
@@ -314,8 +308,11 @@ async def on_message(message):
                 await message.channel.send(embed=embedmsg)
                 return
             # Check if the user has already claimed their daily card
-            if user["claim_date"] + datetime.timedelta(minutes=timely_claim_cooldown) > datetime.datetime.now():
-                embedmsg = discord.Embed(title="Error", description="You have already claimed your daily card",
+            difference_between_now_and_claim_date_in_seconds = (datetime.datetime.now() - pd.to_datetime(user.claim_date).to_pydatetime()).total_seconds()
+            time_to_wait = timely_claim_cooldown - difference_between_now_and_claim_date_in_seconds
+            if time_to_wait > 0:
+                embedmsg = discord.Embed(title="Error",
+                                         description=f"You have already claimed your timely card.\n You must wait for {int(time_to_wait)} seconds before you can claim again.",
                                          color=embed_msg_color_error)
                 await message.channel.send(embed=embedmsg)
                 return
@@ -328,11 +325,17 @@ async def on_message(message):
             card_rarity = weightedpick(["common", "rare", "epic", "legendary"],
                                         [timely_claim_common_weight, timely_claim_rare_weight, timely_claim_epic_weight,
                                          timely_claim_legendary_weight])
-            card = card_collection.find_one({"rarity": card_rarity})
+            allcards = card_collection.find(({"rarity": card_rarity}))
+            cardslist = []
+            while allcards.alive:
+                card = allcards.next()
+                cardslist.append(card if card is not None else [])
+            card = random.choice(cardslist)
             user_collection.update_one({"discord_id": message.author.id}, {"$push": {"cards": card}})
             user_collection.update_one({"discord_id": message.author.id}, {"$set": {"claim_date": datetime.datetime.now()}})
-            embedmsg = discord.Embed(title="Success", description=f"You have claimed a {card_rarity} card: {card['name']}",
+            embedmsg = discord.Embed(title="Success", description=f"Card claimed: {card['name']}",
                                      color=embed_msg_color_success)
+            embedmsg.add_field(name="Rarity", value=card['rarity'], inline=True)
             await message.channel.send(embed=embedmsg)
             return
 
@@ -361,9 +364,14 @@ async def on_message(message):
                 embedmsg = discord.Embed(title="Card List", description="List of all cards in the game",
                                          color=embed_msg_color_standard)
                 for card in cards:
+                    if len(embedmsg.fields) >= 20:
+                        await message.channel.send(embed=embedmsg)
+                        embedmsg = discord.Embed(title="Card List", description="List of all cards in the game",
+                                                 color=embed_msg_color_standard)
                     embedmsg.add_field(name=f"Card ID: {card['card_id']}",
                                        value=f"Name: {card['name']}\nRarity: {card['rarity']}\nDescription: {card['description']}",
                                        inline=False)
+
                 await message.channel.send(embed=embedmsg)
                 return
             if subcommand == "userslist":
@@ -399,11 +407,10 @@ async def on_message(message):
 def weightedpick(options, weights):
     total = sum(weights)
     r = random.uniform(0, total)
-    upto = 0
-    for i, w in enumerate(weights):
-        if upto + w >= r:
+    for (i, w) in enumerate(weights):
+        r -= w
+        if r < 0:
             return options[i]
-        upto += w
     return options[-1]
 
 
@@ -427,6 +434,9 @@ def help(category):
     embedmsg.add_field(name="!help", value="Displays this message", inline=True)
     embedmsg.add_field(name="!register", value="Registers the user into the game", inline=True)
     embedmsg.add_field(name="!checkperms", value="Checks the permissions of the user", inline=True)
+    embedmsg.add_field(name="!inventory", value="Displays the user's inventory", inline=True)
+    embedmsg.add_field(name="!claim", value="Claims a card", inline=True)
+    embedmsg.add_field(name="!debug", value="Debug commands, for admin use only", inline=True)
 
     return embedmsg
 

@@ -5,10 +5,8 @@ services:
     restart: unless-stopped
     volumes:
       - tcg_db_data:/data/db
-      - tcg_db_config:/data/configdb
     ports:
       - "27017:27017"
 
 volumes:
   tcg_db_data:
-  tcg_db_config:
