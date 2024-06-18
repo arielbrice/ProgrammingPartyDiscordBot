@@ -24,7 +24,7 @@ embed_msg_color_error = 0xff0000
 embed_msg_color_success = 0x00ff00
 
 # How often can the user claim in seconds
-timely_claim_cooldown = 30
+timely_claim_cooldown = 20
 
 # Timely card claim weights
 timely_claim_common_weight = 300
@@ -62,7 +62,8 @@ class Card:
 
 
 class User:
-    def __init__(self, discord_id: int, registration_date: datetime, claim_date: datetime, level: int, exp: int, balance: int,
+    def __init__(self, discord_id: int, registration_date: datetime, claim_date: datetime, level: int, exp: int,
+                 balance: int,
                  cards: Set[Card]):
         self.discord_id = discord_id
         self.registration_date = registration_date
@@ -220,7 +221,8 @@ def getperms(user_id: int):
 def get_user(user_id: int):
     user = user_collection.find_one({"discord_id": user_id})
     if user is not None:
-        return User(user["discord_id"], user["registration_date"], user["claim_date"], user["level"], user["exp"], user["balance"],
+        return User(user["discord_id"], user["registration_date"], user["claim_date"], user["level"], user["exp"],
+                    user["balance"],
                     user["cards"])
     else:
         return None
@@ -288,13 +290,13 @@ async def on_message(message):
                 await message.channel.send(embed=embedmsg)
                 return
             embedmsg = discord.Embed(title="Inventory", description="Your inventory",
-                                        color=embed_msg_color_standard)
+                                     color=embed_msg_color_standard)
             for (i, card) in enumerate(user.cards):
                 if len(embedmsg.fields) >= 20:
                     await message.channel.send(embed=embedmsg)
                     embedmsg = discord.Embed(title="Inventory", description="Your inventory",
-                                            color=embed_msg_color_standard)
-                embedmsg.add_field(name=f"{i+1}.",
+                                             color=embed_msg_color_standard)
+                embedmsg.add_field(name=f"{i + 1}.",
                                    value=f"Name: {card['name']}\nRarity: {card['rarity']}\nDescription: {card['description']}",
                                    inline=True)
             await message.channel.send(embed=embedmsg)
@@ -308,7 +310,8 @@ async def on_message(message):
                 await message.channel.send(embed=embedmsg)
                 return
             # Check if the user has already claimed their daily card
-            difference_between_now_and_claim_date_in_seconds = (datetime.datetime.now() - pd.to_datetime(user.claim_date).to_pydatetime()).total_seconds()
+            difference_between_now_and_claim_date_in_seconds = (
+                        datetime.datetime.now() - pd.to_datetime(user.claim_date).to_pydatetime()).total_seconds()
             time_to_wait = timely_claim_cooldown - difference_between_now_and_claim_date_in_seconds
             if time_to_wait > 0:
                 embedmsg = discord.Embed(title="Error",
@@ -323,8 +326,8 @@ async def on_message(message):
             # If the number is between the sum of the common and rare weights and the sum of the common, rare, and epic weights, the user gets an epic card
             # If the number is between the sum of the common, rare, and epic weights and the sum of the common, rare, epic, and legendary weights, the user gets a legendary card
             card_rarity = weightedpick(["common", "rare", "epic", "legendary"],
-                                        [timely_claim_common_weight, timely_claim_rare_weight, timely_claim_epic_weight,
-                                         timely_claim_legendary_weight])
+                                       [timely_claim_common_weight, timely_claim_rare_weight, timely_claim_epic_weight,
+                                        timely_claim_legendary_weight])
             allcards = card_collection.find(({"rarity": card_rarity}))
             cardslist = []
             while allcards.alive:
@@ -332,13 +335,13 @@ async def on_message(message):
                 cardslist.append(card if card is not None else [])
             card = random.choice(cardslist)
             user_collection.update_one({"discord_id": message.author.id}, {"$push": {"cards": card}})
-            user_collection.update_one({"discord_id": message.author.id}, {"$set": {"claim_date": datetime.datetime.now()}})
+            user_collection.update_one({"discord_id": message.author.id},
+                                       {"$set": {"claim_date": datetime.datetime.now()}})
             embedmsg = discord.Embed(title="Success", description=f"Card claimed: {card['name']}",
                                      color=embed_msg_color_success)
             embedmsg.add_field(name="Rarity", value=card['rarity'], inline=True)
             await message.channel.send(embed=embedmsg)
             return
-
 
         if command == "debug":
             if not checkperms(message.author.id, "admin"):
