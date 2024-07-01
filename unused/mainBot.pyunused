@@ -112,7 +112,7 @@ if user_collection.count_documents({}) == 0:
 if card_collection.count_documents({}) == 0:
     # Loads up CSVs, converts them into dicts, 1st row is header.
     cardid = 0
-    with open("cardslist_bootstrap_commons.csv", "r") as file:
+    with open("../cardslist_bootstrap_files/cardslist_bootstrap_commons.csv", "r") as file:
         next(file)
         for line in file:
             card = line.split(",")
@@ -125,7 +125,7 @@ if card_collection.count_documents({}) == 0:
             }
             card_collection.insert_one(card)
             cardid += 1
-    with open("cardslist_bootstrap_rares.csv", "r") as file:
+    with open("../cardslist_bootstrap_files/cardslist_bootstrap_rares.csv", "r") as file:
         next(file)
         for line in file:
             card = line.split(",")
@@ -138,7 +138,7 @@ if card_collection.count_documents({}) == 0:
             }
             card_collection.insert_one(card)
             cardid += 1
-    with open("cardslist_bootstrap_epics.csv", "r") as file:
+    with open("../cardslist_bootstrap_files/cardslist_bootstrap_epics.csv", "r") as file:
         next(file)
         for line in file:
             card = line.split(",")
@@ -151,7 +151,7 @@ if card_collection.count_documents({}) == 0:
             }
             card_collection.insert_one(card)
             cardid += 1
-    with open("cardslist_bootstrap_legendaries.csv", "r") as file:
+    with open("../cardslist_bootstrap_files/cardslist_bootstrap_legendaries.csv", "r") as file:
         next(file)
         for line in file:
             card = line.split(",")
